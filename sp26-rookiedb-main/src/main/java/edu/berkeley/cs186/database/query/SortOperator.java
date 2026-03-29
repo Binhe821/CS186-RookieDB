@@ -166,7 +166,15 @@ public class SortOperator extends QueryOperator {
      */
     public List<Run> mergePass(List<Run> runs) {
         // TODO(proj3_part1): implement
-
+        List<Run> run = new ArrayList<>();
+        int count = 0, limit = runs.size();
+        while(count != limit) {
+            int numToMerge = Math.min(limit - count, numBuffers - 1);
+            List<Run> toMerge = runs.subList(count, count + numToMerge);
+            run.add(mergeSortedRuns(toMerge));
+            count += numToMerge;
+        }
+        return run;
     }
 
     /**
@@ -180,9 +188,18 @@ public class SortOperator extends QueryOperator {
     public Run sort() {
         // Iterator over the records of the relation we want to sort
         Iterator<Record> sourceIterator = getSource().iterator();
-
+        List<Run> runs = new ArrayList<>();
+        while (sourceIterator.hasNext()) {
+            Iterator<Record> iter = getBlockIterator(sourceIterator, getSchema(), numBuffers);
+            Run sorted = sortRun(iter);
+            runs.add(sorted);
+        }
+        while (runs.size() != 1) {
+            runs = mergePass(runs);
+        }
+        return runs.get(0);
         // TODO(proj3_part1): implement
-        return makeRun(); // TODO(proj3_part1): replace this!
+        // TODO(proj3_part1): replace this!
     }
 
     /**
