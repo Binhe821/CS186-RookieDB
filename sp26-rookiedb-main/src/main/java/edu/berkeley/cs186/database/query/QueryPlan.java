@@ -575,8 +575,21 @@ public class QueryPlan {
      */
     public QueryOperator minCostSingleAccess(String table) {
         QueryOperator minOp = new SequentialScanOperator(this.transaction, table);
-
         // TODO(proj3_part2): implement
+        int minCost = minOp.estimateIOCost();
+        List<Integer> cols = getEligibleIndexColumns(table);
+        int ind = -1;
+        for (int index:cols) {
+            SelectPredicate temp = selectPredicates.get(index);
+            QueryOperator Op1 = new IndexScanOperator(transaction, table, temp.column, temp.operator, temp.value);
+            int cost = Op1.estimateIOCost();
+            if (cost < minCost) {
+                minCost = cost;
+                minOp = Op1;
+                ind = index;
+            }
+        }
+        minOp = addEligibleSelections(minOp, ind);
         return minOp;
     }
 
@@ -646,6 +659,40 @@ public class QueryPlan {
         //      calculate the cheapest join with the new table (the one you
         //      fetched an operator for from pass1Map) and the previously joined
         //      tables. Then, update the result map if needed.
+        for (Set<String> keys:prevMap.keySet()) {
+            for (int j = 0; j < this.joinPredicates.size(); j++) {
+                JoinPredicate temp = this.joinPredicates.get(j);
+                String left = temp.leftTable;
+                String right = temp.rightTable;
+                QueryOperator operleft = prevMap.get(keys), operright = null;
+                Set<String> toInsert = new HashSet<>();
+                boolean leftlost = false;
+                if (keys.contains(left) && !keys.contains(right)) {
+                    Set<String> toSearch = new HashSet<>();
+                    toSearch.add(right);
+                    operright = pass1Map.get(toSearch);
+                    toInsert.add(right);
+                } else if (!keys.contains(left) && keys.contains(right)) {
+                    Set<String> toSearch = new HashSet<>();
+                    toSearch.add(left);
+                    operright = pass1Map.get(toSearch);
+                    toInsert.add(left);
+                    leftlost = true;
+                } else continue;
+                QueryOperator ret;
+                if (!leftlost) ret = minCostJoinType(operleft, operright, temp.leftColumn, temp.rightColumn);
+                else ret = minCostJoinType(operleft, operright, temp.rightColumn, temp.leftColumn);
+                toInsert.addAll(keys);
+                if (!result.containsKey(toInsert)) {
+                    result.put(toInsert, ret);
+                } else {
+                    QueryOperator existingOp = result.get(toInsert);
+                    if (ret.estimateIOCost() < existingOp.estimateIOCost()) {
+                        result.put(toInsert, ret);
+                    }
+                }
+            }
+        }
         return result;
     }
 
@@ -695,7 +742,23 @@ public class QueryPlan {
         // Set the final operator to the lowest cost operator from the last
         // pass, add group by, project, sort and limit operators, and return an
         // iterator over the final operator.
-        return this.executeNaive(); // TODO(proj3_part2): Replace this!
+        Map<Set<String>, QueryOperator> mapping1 = new HashMap<>();
+        for (String tab: tableNames) {
+            Set<String> t = new HashSet<>();
+            t.add(tab);
+            QueryOperator op = minCostSingleAccess(tab);
+            mapping1.put(t, op);
+        }
+        Map<Set<String>, QueryOperator> mapping2 = mapping1;
+        for (int i = 1; i < this.tableNames.size(); i++) {
+            mapping2 = minCostJoins(mapping2, mapping1);
+        }
+        this.finalOperator = minCostOperator(mapping2);
+        this.addGroupBy();
+        this.addProject();
+        this.addSort();
+        this.addLimit();
+        return this.finalOperator.iterator(); // TODO(proj3_part2): Replace this!
     }
 
     // EXECUTE NAIVE ///////////////////////////////////////////////////////////
