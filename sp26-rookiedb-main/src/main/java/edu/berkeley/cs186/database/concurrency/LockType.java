@@ -22,8 +22,11 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(proj4_part1): implement
-
-        return false;
+        if (a.equals(NL) || b.equals(NL)) return true;
+        if (a.equals(X) || b.equals(X)) return false;
+        else if (a.equals(IS)|| b.equals(IS)) return true;
+        else if (a.equals(SIX) || b.equals(SIX)) return false;
+        else return a.equals(b);
     }
 
     /**
@@ -54,7 +57,9 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(proj4_part1): implement
-
+        if (childLockType.equals(NL) || parentLockType.equals(IX)) return true;
+        if (parentLockType.equals(IS)) return childLockType.equals(IS) || childLockType.equals(S);
+        if (parentLockType.equals(SIX)) return childLockType.equals(IX) || childLockType.equals(X) || childLockType.equals(SIX);
         return false;
     }
 
@@ -69,8 +74,12 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(proj4_part1): implement
-
-        return false;
+        if (substitute.equals(NL) && !required.equals(NL)) return false;
+        if (substitute.equals(required)) return true;
+        if (required.equals(IS)) return true;
+        else if ((required.equals(S) || required.equals(IX)) && (substitute.equals(SIX) || substitute.equals(X))) return true;
+        else if (required.equals(SIX) && substitute.equals(X)) return true;
+        else return false;
     }
 
     /**
