@@ -75,10 +75,13 @@ public class LockManager {
             for (Lock l:locks) {
                 if (l.transactionNum == lock.transactionNum) {
                     locks.remove(l);
+                    transactionLocks.get(lock.transactionNum).remove(l);
                     break;
                 }
             }
             locks.add(lock);
+            transactionLocks.putIfAbsent(lock.transactionNum, new ArrayList<>());
+            transactionLocks.get(lock.transactionNum).add(lock);
             return;
         }
 
@@ -89,6 +92,13 @@ public class LockManager {
         public void releaseLock(Lock lock) {
             // TODO(proj4_part1): implement
             locks.remove(lock);
+            List<Lock> tlocks = transactionLocks.get(lock.transactionNum);
+            if (tlocks != null) {
+                tlocks.remove(lock);
+                if (tlocks.isEmpty()) {
+                    transactionLocks.remove(lock.transactionNum);
+                }
+            }
             processQueue();
             return;
         }
@@ -117,6 +127,11 @@ public class LockManager {
                 if (checkCompatible(lock.lockType, l.transaction.getTransNum())) {
                     requests.remove();
                     grantOrUpdateLock(lock);
+                    for (Lock oldLock : l.releasedLocks) {
+                        if (!oldLock.name.equals(lock.name)) {
+                            getResourceEntry(oldLock.name).releaseLock(oldLock);
+                        }
+                    }
                     l.transaction.unblock();
                 }
                 else break;

@@ -1,7 +1,6 @@
 package edu.berkeley.cs186.database.concurrency;
 
 import edu.berkeley.cs186.database.TransactionContext;
-import jdk.tools.jlink.plugin.ResourcePoolEntry;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -311,7 +310,7 @@ public class LockContext {
      */
     private List<ResourceName> sisDescendants(TransactionContext transaction) {
         ArrayList<ResourceName> toRet = new ArrayList<>();
-        ArrayList<Lock> locks = lockman.getLocks(transaction);
+        List<Lock> locks = lockman.getLocks(transaction);
         for (Lock l: locks) {
             if (l.name.isDescendantOf(name)) {
                 if (l.lockType == LockType.IS || l.lockType == LockType.S) {
@@ -372,4 +371,3 @@ public class LockContext {
         return "LockContext(" + name.toString() + ")";
     }
 }
-

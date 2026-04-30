@@ -1,5 +1,6 @@
 package edu.berkeley.cs186.database.concurrency;
 
+import edu.berkeley.cs186.database.Transaction;
 import edu.berkeley.cs186.database.TransactionContext;
 
 /**
@@ -42,8 +43,45 @@ public class LockUtil {
         LockType explicitLockType = lockContext.getExplicitLockType(transaction);
 
         // TODO(proj4_part2): implement
+        if (LockType.substitutable(effectiveLockType, requestType))
+            return;
+
+        LockType requiredIntent = requestType == LockType.S ? LockType.IS : LockType.IX;
+        ensureAncestorLock(parentContext, transaction, requiredIntent);
+
+        if (explicitLockType == LockType.IX  && requestType == LockType.S) {
+            lockContext.promote(transaction, LockType.SIX);
+            return;
+        }
+        if (explicitLockType.isIntent()) {
+            lockContext.escalate(transaction);
+            explicitLockType = lockContext.getExplicitLockType(transaction);
+            if (explicitLockType == LockType.S && requestType == LockType.X) {
+                lockContext.promote(transaction, LockType.X);
+            }
+            return;
+        }
+        if (explicitLockType == LockType.NL) {
+            lockContext.acquire(transaction, requestType);
+        } else if (explicitLockType == LockType.S && requestType == LockType.X) {
+            lockContext.promote(transaction,LockType.X);
+        }
         return;
     }
+    private static void ensureAncestorLock(LockContext current, TransactionContext transaction, LockType requiredIntent) {
 
+        if (current == null) return;
+
+        ensureAncestorLock(current.parentContext(), transaction, requiredIntent);
+        LockType explicit = current.getExplicitLockType(transaction);
+        if (LockType.substitutable(explicit, requiredIntent)) return;
+        if (explicit == LockType.NL) {
+            current.acquire(transaction, requiredIntent);
+        } else if (explicit == LockType.IS && requiredIntent == LockType.IX) {
+            current.promote(transaction, LockType.IX);
+        } else if (explicit == LockType.S && requiredIntent == LockType.IX) {
+            current.promote(transaction, LockType.SIX);
+        }
+    }
     // TODO(proj4_part2) add any helper methods you want
 }

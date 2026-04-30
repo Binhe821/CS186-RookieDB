@@ -935,6 +935,19 @@ public class Database implements AutoCloseable {
         public void close() {
             try {
                 // TODO(proj4_part2)
+                List<Lock> locks = lockManager.getLocks(this);
+                List<LockContext> contexts = new ArrayList<>();
+                for (Lock lock : locks) {
+                    contexts.add(LockContext.fromResourceName(lockManager, lock.name));
+                }
+                contexts.sort((c1,c2)->{
+                    int depth1 = getDepth(c1);
+                    int depth2 = getDepth(c2);
+                    return Integer.compare(depth2, depth1);
+                });
+                for (LockContext ctx : contexts) {
+                    ctx.release(this);
+                }
                 return;
             } catch (Exception e) {
                 // There's a chance an error message from your release phase
@@ -946,6 +959,15 @@ public class Database implements AutoCloseable {
             } finally {
                 if (!this.recoveryTransaction) TransactionContext.unsetTransaction();
             }
+        }
+
+        private int getDepth(LockContext ctx) {
+            int depth = 0;
+            while (ctx != null) {
+                depth++;
+                ctx = ctx.parentContext();
+            }
+            return depth;
         }
 
         @Override
