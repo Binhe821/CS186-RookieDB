@@ -8,6 +8,7 @@ import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.memory.Page;
 import edu.berkeley.cs186.database.recovery.records.*;
 
+import java.awt.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -92,8 +93,17 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long commit(long transNum) {
+        TransactionTableEntry tableEntry = transactionTable.get(transNum);
+        LogRecord record = new CommitTransactionLogRecord(transNum, tableEntry.lastLSN);
+
+        long LSN = logManager.appendToLog(record);
+
+        tableEntry.transaction.setStatus(Transaction.Status.COMMITTING);
+        tableEntry.lastLSN = LSN;
+        transactionTable.put(transNum, tableEntry);
+        logManager.flushToLSN(LSN);
         // TODO(proj5): implement
-        return -1L;
+        return LSN;
     }
 
     /**
@@ -108,8 +118,15 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long abort(long transNum) {
+        TransactionTableEntry tableEntry = transactionTable.get(transNum);
+        LogRecord record = new AbortTransactionLogRecord(transNum, tableEntry.lastLSN);
+        long LSN = logManager.appendToLog(record);
+
+        tableEntry.transaction.setStatus(Transaction.Status.ABORTING);
+        tableEntry.lastLSN = LSN;
+        transactionTable.put(transNum, tableEntry);
         // TODO(proj5): implement
-        return -1L;
+        return LSN;
     }
 
     /**
@@ -126,8 +143,17 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long end(long transNum) {
+        TransactionTableEntry tableEntry = transactionTable.get(transNum);
+        if(tableEntry.transaction.getStatus() == Transaction.Status.ABORTING) {
+            rollbackToLSN(transNum, 0);
+        }
+        LogRecord record = new EndTransactionLogRecord(transNum,tableEntry.lastLSN);
+        long LSN = logManager.appendToLog(record);
+        tableEntry.transaction.setStatus(Transaction.Status.COMPLETE);
+        tableEntry.lastLSN = LSN;
+        transactionTable.remove(transNum);
         // TODO(proj5): implement
-        return -1L;
+        return LSN;
     }
 
     /**
@@ -150,11 +176,24 @@ public class ARIESRecoveryManager implements RecoveryManager {
     private void rollbackToLSN(long transNum, long LSN) {
         TransactionTableEntry transactionEntry = transactionTable.get(transNum);
         LogRecord lastRecord = logManager.fetchLogRecord(transactionEntry.lastLSN);
-        long lastRecordLSN = lastRecord.getLSN();
         // Small optimization: if the last record is a CLR we can start rolling
         // back from the next record that hasn't yet been undone.
-        long currentLSN = lastRecord.getUndoNextLSN().orElse(lastRecordLSN);
+        long currentLSN = lastRecord.getUndoNextLSN().orElse(lastRecord.getLSN());
         // TODO(proj5) implement the rollback logic described above
+        while(currentLSN > LSN) {
+            LogRecord currentRecord = logManager.fetchLogRecord(currentLSN);
+            if(currentRecord.isUndoable()) {
+                LogRecord CLR = currentRecord.undo(transactionEntry.lastLSN);
+                logManager.appendToLog(CLR);
+                transactionEntry.lastLSN = CLR.getLSN();
+                CLR.redo(this, diskSpaceManager, bufferManager);
+                currentLSN = CLR.getUndoNextLSN().orElse(LSN);
+            }
+            else {
+                currentLSN = currentRecord.getPrevLSN().orElse(LSN);
+            }
+            if (currentLSN == LSN) break;
+        }
     }
 
     /**
@@ -204,8 +243,24 @@ public class ARIESRecoveryManager implements RecoveryManager {
                              byte[] after) {
         assert (before.length == after.length);
         assert (before.length <= BufferManager.EFFECTIVE_PAGE_SIZE / 2);
+
+        if (DiskSpaceManager.getPartNum(pageNum) == 0) return -1L;
+
+        TransactionTableEntry transactionEntry = transactionTable.get(transNum);
+        assert (transactionEntry != null);
+
+        long prevLSN = transactionEntry.lastLSN;
+        LogRecord record = new UpdatePageLogRecord(transNum, pageNum, prevLSN, pageOffset, before, after);
+        long LSN = logManager.appendToLog(record);
+        // Update lastLSN
+        transactionEntry.lastLSN = LSN;
+        transactionTable.put(transNum, transactionEntry);
+
+        if (!dirtyPageTable.containsKey(pageNum)) dirtyPageTable.put(pageNum, LSN);
+
+        return LSN;
+
         // TODO(proj5): implement
-        return -1L;
     }
 
     /**
