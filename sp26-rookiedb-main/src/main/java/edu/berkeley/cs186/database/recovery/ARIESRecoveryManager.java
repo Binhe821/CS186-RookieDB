@@ -435,6 +435,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // All of the transaction's changes strictly after the record at LSN should be undone.
         long savepointLSN = transactionEntry.getSavepoint(name);
 
+        rollbackToLSN(transNum, savepointLSN);
         // TODO(proj5): implement
         return;
     }
@@ -463,7 +464,27 @@ public class ARIESRecoveryManager implements RecoveryManager {
         Map<Long, Pair<Transaction.Status, Long>> chkptTxnTable = new HashMap<>();
 
         // TODO(proj5): generate end checkpoint record(s) for DPT and transaction table
-
+        Set<Long> pageID = dirtyPageTable.keySet();
+        Set<Long> XID = transactionTable.keySet();
+        for (Long key:pageID) {
+            if (!EndCheckpointLogRecord.fitsInOneRecord(chkptDPT.size() + 1, chkptTxnTable.size())){
+                LogRecord endRecord = new EndCheckpointLogRecord(chkptDPT,chkptTxnTable);
+                logManager.appendToLog(endRecord);
+                chkptDPT.clear();
+            }
+            chkptDPT.put(key,dirtyPageTable.get(key));
+        }
+        for (Long key:XID) {
+            if (!EndCheckpointLogRecord.fitsInOneRecord(chkptDPT.size(), chkptTxnTable.size() + 1)){
+                LogRecord endRecord = new EndCheckpointLogRecord(chkptDPT,chkptTxnTable);
+                logManager.appendToLog(endRecord);
+                chkptDPT.clear();
+                chkptTxnTable.clear();
+            }
+            TransactionTableEntry trans = transactionTable.get(key);
+            Pair<Transaction.Status, Long> pair = new Pair<>(trans.transaction.getStatus(), trans.lastLSN);
+            chkptTxnTable.put(key, pair);
+        }
         // Last end checkpoint record
         LogRecord endRecord = new EndCheckpointLogRecord(chkptDPT, chkptTxnTable);
         logManager.appendToLog(endRecord);
