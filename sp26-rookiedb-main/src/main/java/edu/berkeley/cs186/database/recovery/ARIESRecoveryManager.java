@@ -765,6 +765,45 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     void restartUndo() {
         // TODO(proj5): implement
+        PriorityQueue<Long> transactions= new PriorityQueue<>(new Comparator<Long>() {
+            @Override
+            public int compare(Long o1, Long o2) {
+                return Long.compare(o2,o1);
+            }
+        });
+        for (Long key:transactionTable.keySet()) {
+            if (transactionTable.get(key).transaction.getStatus() == Transaction.Status.RECOVERY_ABORTING) {
+                transactions.add(transactionTable.get(key).lastLSN);
+            }
+        }
+        while (!transactions.isEmpty()) {
+            long curLSN = transactions.poll();;
+            LogRecord log = logManager.fetchLogRecord(curLSN);
+            long nextLSN = 0;
+            TransactionTableEntry temp = transactionTable.get(log.getTransNum().orElse(0L));
+            if (log.getUndoNextLSN().isPresent()) {
+                nextLSN = log.getUndoNextLSN().get();
+            }
+            else if (log.isUndoable()) {
+                LogRecord clr = log.undo(temp.lastLSN);
+                long clrLSN = logManager.appendToLog(clr);
+                temp.lastLSN = clrLSN;
+                clr.redo(this,diskSpaceManager,bufferManager);
+                nextLSN = log.getPrevLSN().orElse(0L);
+            }
+            else {
+                nextLSN = log.getPrevLSN().orElse(0L);
+            }
+            if (nextLSN == 0L) {
+                temp.transaction.cleanup();
+                long endLSN = logManager.appendToLog(new EndTransactionLogRecord(temp.transaction.getTransNum(),temp.lastLSN));
+                transactionTable.remove(temp.transaction.getTransNum());
+                temp.transaction.setStatus(Transaction.Status.COMPLETE);
+            }
+            else {
+                transactions.add(nextLSN);
+            }
+        }
         return;
     }
 
